@@ -1,0 +1,17 @@
+<input data-testid="search-input" placeholder="Search..." />
+
+<div data-testid="search-results"></div>
+
+<div data-testid="cdc-feed"></div>
+
+<div data-testid="live-indicator">LIVE</div>
+
+<script>
+const evt = new EventSource("/api/cdc-stream");
+
+evt.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    const feed = document.querySelector('[data-testid="cdc-feed"]');
+    feed.innerHTML += `<p>${data.operation} on ${data.table}</p>`;
+};
+</script>

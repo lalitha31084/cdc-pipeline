@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: postgres:14
+    container_name: postgres
+    # Required for Change Data Capture (CDC)
+    command: ["postgres", "-c", "wal_level=logical"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cdc_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./init_db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.7
+    container_name: meilisearch
+    ports:
+      - "7700:7700"
+    environment:
+      MEILI_MASTER_KEY: masterKey
+    volumes:
+      - meili_data:/data.ms
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./api-frontend
+      dockerfile: Dockerfile
+    container_name: api
+    ports:
+      - "8000:8000"
+    depends_on:
+      - meilisearch
+    restart: on-failure
+
+  cdc-consumer:
+    build:
+      context: ./cdc-consumer
+      dockerfile: Dockerfile
+    container_name: cdc-consumer
+    environment:
+      - PYTHONUNBUFFERED=1
+    # This keeps the consumer alive even if it fails to connect to Postgres during startup
+    restart: always 
+    depends_on:
+      - postgres
+      - meilisearch
+
+volumes:
+  meili_data:

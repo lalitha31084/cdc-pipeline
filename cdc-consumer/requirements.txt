@@ -1,0 +1,6 @@
+fastapi
+requests
+uvicorn
+psycopg2-binary
+sqlalchemy
+meilisearch
