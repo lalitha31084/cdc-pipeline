@@ -1,17 +1,23 @@
+version: '3.8'
+
 services:
   postgres:
     image: postgres:14
     container_name: postgres
-    # Required for Change Data Capture (CDC)
     command: ["postgres", "-c", "wal_level=logical"]
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: cdc_db
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-cdc_db}
     ports:
       - "5432:5432"
     volumes:
       - ./init_db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cdc_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   meilisearch:
@@ -20,10 +26,15 @@ services:
     ports:
       - "7700:7700"
     environment:
-      MEILI_MASTER_KEY: masterKey
-    volumes:
-      - meili_data:/data.ms
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-masterKey}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:7700/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
+    volumes:
+      - meili_data:/meili_data
 
   api:
     build:
@@ -32,9 +43,33 @@ services:
     container_name: api
     ports:
       - "8000:8000"
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-masterKey}
+      MEILI_URL: http://meilisearch:7700
+      REDIS_HOST: redis
     depends_on:
-      - meilisearch
+      meilisearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     restart: on-failure
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
   cdc-consumer:
     build:
@@ -43,11 +78,21 @@ services:
     container_name: cdc-consumer
     environment:
       - PYTHONUNBUFFERED=1
-    # This keeps the consumer alive even if it fails to connect to Postgres during startup
-    restart: always 
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-cdc_db}
+      - POSTGRES_HOST=postgres
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:-masterKey}
+      - MEILI_URL=http://meilisearch:7700
+      - REDIS_HOST=redis
     depends_on:
-      - postgres
-      - meilisearch
+      postgres:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
 
 volumes:
   meili_data:

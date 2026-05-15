@@ -18,4 +18,4 @@ COPY . .
 # Force unbuffered output so we see errors immediately
 ENV PYTHONUNBUFFERED=1
 
-CMD ["python", "main.py"]
+CMD ["python", "main.py"]an
